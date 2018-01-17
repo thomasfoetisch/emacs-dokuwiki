@@ -4,6 +4,7 @@
 
 ;; Author: Juan Karlo Licudine <accidentalrebel@gmail.com>
 ;; URL: http://www.github.com/accidentalrebel/emacs-dokuwiki
+;; Package-Version: 20180101.1659
 ;; Version: 1.0.0
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "24.3") (xml-rpc "1.6.8"))
@@ -81,19 +82,22 @@ the page-name.  For example, \"namespace:wiki-page\" to open the
 If the specified page does not exist, it creates a new page once the
 buffer is saved."
   (interactive "sEnter page name: ")
-  (if (not dokuwiki--has-successfully-logged-in)
-      (user-error "Login first before opening a page")
-    (let* ((page-name (car (last (split-string page-name-or-url "/"))))
-	  (page-content (xml-rpc-method-call dokuwiki-xml-rpc-url 'wiki.getPage page-name)))
-      (message "Page name is \"%s\"" page-name)
-      (if (not page-content)
-	  (message "Page not found in wiki. Creating a new buffer with page name \"%s\"" page-name)
-	(message "Page exists. Creating buffer for existing page \"%s\"" page-name))
-      (get-buffer-create (concat page-name ".dwiki"))
-      (switch-to-buffer (concat page-name ".dwiki"))
-      (erase-buffer)
-      (when page-content
-	(insert page-content)))))
+  (when (not dokuwiki--has-successfully-logged-in)
+    (dokuwiki-login))
+  (let* ((page-name (car (last (split-string page-name-or-url "/"))))
+         (page-content (xml-rpc-method-call dokuwiki-xml-rpc-url 'wiki.getPage page-name)))
+    (message "Page name is \"%s\"" page-name)
+    (if (not page-content)
+        (message "Page not found in wiki. Creating a new buffer with page name \"%s\"" page-name)
+      (message "Page exists. Creating buffer for existing page \"%s\"" page-name))
+    (get-buffer-create (concat page-name ".dwiki"))
+    (switch-to-buffer (concat page-name ".dwiki"))
+    (erase-buffer)
+    (when page-content
+      (insert page-content))
+    (with-current-buffer (concat page-name ".dwiki")
+      (set-visited-file-name (expand-file-name (concat page-name ".dwiki")))
+      (set-auto-mode))))
 
 (defun dokuwiki-save-page ()
   "Save the current buffer as a page in the wiki.
@@ -102,8 +106,8 @@ Uses the buffer name as the page name.  A buffer of \"wiki-page.dwiki\"
 is saved as \"wikiurl.com/wiki-page\".  On the other hand, a buffer of
 \"namespace:wiki-page.dwiki\" is saved as \"wikiurl.com/namespace:wiki-page\""
   (interactive)
-  (if (not dokuwiki--has-successfully-logged-in)
-      (user-error "Login first before saving a page")
+  (when (not dokuwiki--has-successfully-logged-in)
+      (dokuwiki-login))
     (if (not (string-match-p ".dwiki" (buffer-name)))
 	(error "The current buffer is not a .dwiki buffer")
       (let ((page-name (replace-regexp-in-string ".dwiki" "" (buffer-name))))
@@ -114,7 +118,7 @@ is saved as \"wikiurl.com/wiki-page\".  On the other hand, a buffer of
 		(save-success (xml-rpc-method-call dokuwiki-xml-rpc-url 'wiki.putPage page-name (buffer-string) `(("sum" . ,summary) ("minor" . ,minor)))))
 	   (if save-success
 	       (message "Saving successful with summary %s and minor of %s." summary minor)
-	     (error "Saving unsuccessful!")))))))
+	     (error "Saving unsuccessful!"))))))
 
 (defun dokuwiki-get-wiki-title ()
   "Gets the title of the current wiki."
@@ -127,15 +131,15 @@ is saved as \"wikiurl.com/wiki-page\".  On the other hand, a buffer of
 (defun dokuwiki-list-pages ()
   "Show a selectable list containing pages from the current wiki."
   (interactive)
-  (if (not dokuwiki--has-successfully-logged-in)
-      (user-error "Login first before listing the pages")
+  (when (not dokuwiki--has-successfully-logged-in)
+      (dokuwiki-login))
     (let ((page-detail-list (xml-rpc-method-call dokuwiki-xml-rpc-url 'wiki.getAllPages))
 	  (wiki-title (dokuwiki-get-wiki-title))
 	  (page-list ()))
       (dolist (page-detail page-detail-list)
 	(push (cdr (assoc "id" page-detail)) page-list)
 	)
-      (dokuwiki-open-page (completing-read "Select a page to open: " page-list)))))
+      (dokuwiki-open-page (completing-read "Select a page to open: " page-list))))
 
 ;; Helpers
 (defun dokuwiki--credentials ()
@@ -165,7 +169,6 @@ is saved as \"wikiurl.com/wiki-page\".  On the other hand, a buffer of
     (let ((login-name (read-string "Enter login user name: ")))
       (message "The entered login user name is \"%s\"." login-name)
       login-name)))
-
 
 (provide 'dokuwiki)
 ;;; dokuwiki.el ends here
